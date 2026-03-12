@@ -315,3 +315,141 @@ class TestProcessCv:
         # parse_seafarer_cv returns {} on error, so raw_text_preview is added to {}
         assert "raw_text_preview" in result
         assert isinstance(result, dict)
+
+
+# ---------------------------------------------------------------------------
+# process_cv_task tests (US-004)
+# ---------------------------------------------------------------------------
+
+class TestProcessCvTask:
+    """US-004: process_cv_task arq background task."""
+
+    def _make_storage_mock(self, download_fn):
+        """Return a mock api.services.storage module with storage_fs.adownload_file set."""
+        mock_fs = MagicMock()
+        mock_fs.adownload_file = download_fn
+        mock_module = MagicMock()
+        mock_module.storage_fs = mock_fs
+        return mock_module, mock_fs
+
+    async def test_success_downloads_and_parses(self, tmp_path):
+        """US-004: happy path — downloads file, calls process_cv, returns result."""
+        import sys
+        import api.tasks.cv_processing as cv_mod
+
+        fake_pdf = b"%PDF-fake"
+        fake_result = {"name": "Juan", "rank": "Captain", "raw_text_preview": "Juan"}
+        tmp_file = tmp_path / "cv.pdf"
+        tmp_file.write_bytes(fake_pdf)
+
+        async def mock_download(src, dst):
+            import shutil
+            shutil.copy(str(tmp_file), dst)
+            return True
+
+        mock_module, _ = self._make_storage_mock(mock_download)
+
+        with patch.dict(sys.modules, {"api.services.storage": mock_module}), \
+             patch.object(cv_mod, "process_cv", return_value=fake_result):
+            result = await cv_mod.process_cv_task({}, candidate_id=42, file_path="cvs/test.pdf")
+
+        assert result["name"] == "Juan"
+        assert result["rank"] == "Captain"
+
+    async def test_download_failure_raises(self):
+        """US-004: if download fails, raises RuntimeError (arq will retry)."""
+        import sys
+        import api.tasks.cv_processing as cv_mod
+
+        async def mock_download(src, dst):
+            return False
+
+        mock_module, _ = self._make_storage_mock(mock_download)
+
+        with patch.dict(sys.modules, {"api.services.storage": mock_module}):
+            with pytest.raises(RuntimeError):
+                await cv_mod.process_cv_task({}, candidate_id=1, file_path="missing.pdf")
+
+    async def test_temp_file_cleaned_up_on_success(self, tmp_path):
+        """US-004: temp file is removed after successful processing."""
+        import sys
+        import tempfile as _tempfile
+        import api.tasks.cv_processing as cv_mod
+
+        created_paths = []
+        original_ntf = _tempfile.NamedTemporaryFile
+
+        def tracking_ntf(**kwargs):
+            ntf = original_ntf(**kwargs)
+            created_paths.append(ntf.name)
+            return ntf
+
+        fake_pdf = b"%PDF-fake"
+        tmp_file = tmp_path / "cv.pdf"
+        tmp_file.write_bytes(fake_pdf)
+
+        async def mock_download(src, dst):
+            import shutil
+            shutil.copy(str(tmp_file), dst)
+            return True
+
+        mock_module, _ = self._make_storage_mock(mock_download)
+
+        with patch.dict(sys.modules, {"api.services.storage": mock_module}), \
+             patch.object(cv_mod, "process_cv", return_value={"rank": "AB"}), \
+             patch.object(cv_mod.tempfile, "NamedTemporaryFile", side_effect=tracking_ntf):
+            await cv_mod.process_cv_task({}, candidate_id=5, file_path="cvs/test.pdf")
+
+        import os
+        for path in created_paths:
+            assert not os.path.exists(path), f"Temp file not cleaned up: {path}"
+
+    async def test_temp_file_cleaned_up_on_exception(self, tmp_path):
+        """US-004: temp file is removed even when process_cv raises."""
+        import sys
+        import tempfile as _tempfile
+        import api.tasks.cv_processing as cv_mod
+
+        created_paths = []
+        original_ntf = _tempfile.NamedTemporaryFile
+
+        def tracking_ntf(**kwargs):
+            ntf = original_ntf(**kwargs)
+            created_paths.append(ntf.name)
+            return ntf
+
+        fake_pdf = b"%PDF-fake"
+        tmp_file = tmp_path / "cv.pdf"
+        tmp_file.write_bytes(fake_pdf)
+
+        async def mock_download(src, dst):
+            import shutil
+            shutil.copy(str(tmp_file), dst)
+            return True
+
+        mock_module, _ = self._make_storage_mock(mock_download)
+
+        with patch.dict(sys.modules, {"api.services.storage": mock_module}), \
+             patch.object(cv_mod, "process_cv", side_effect=Exception("parse error")), \
+             patch.object(cv_mod.tempfile, "NamedTemporaryFile", side_effect=tracking_ntf):
+            with pytest.raises(Exception, match="parse error"):
+                await cv_mod.process_cv_task({}, candidate_id=7, file_path="cvs/test.pdf")
+
+        import os
+        for path in created_paths:
+            assert not os.path.exists(path), f"Temp file not cleaned up: {path}"
+
+    async def test_exception_is_reraised(self):
+        """US-004: exceptions are re-raised so arq can handle retries."""
+        import sys
+        import api.tasks.cv_processing as cv_mod
+
+        async def mock_download(src, dst):
+            return True
+
+        mock_module, _ = self._make_storage_mock(mock_download)
+
+        with patch.dict(sys.modules, {"api.services.storage": mock_module}), \
+             patch.object(cv_mod, "process_cv", side_effect=ValueError("bad data")):
+            with pytest.raises(ValueError, match="bad data"):
+                await cv_mod.process_cv_task({}, candidate_id=9, file_path="cvs/test.pdf")
