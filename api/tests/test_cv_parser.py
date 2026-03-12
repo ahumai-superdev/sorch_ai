@@ -453,3 +453,135 @@ class TestProcessCvTask:
              patch.object(cv_mod, "process_cv", side_effect=ValueError("bad data")):
             with pytest.raises(ValueError, match="bad data"):
                 await cv_mod.process_cv_task({}, candidate_id=9, file_path="cvs/test.pdf")
+
+
+# ---------------------------------------------------------------------------
+# US-005: Required named tests for acceptance criteria
+# ---------------------------------------------------------------------------
+
+def test_extract_text_happy_path():
+    """US-005: mock fitz.open returns pages with text, assert result contains it."""
+    mock_page = MagicMock()
+    mock_page.get_text.return_value = "Page 1 text"
+    mock_doc = MagicMock()
+    mock_doc.__iter__ = MagicMock(return_value=iter([mock_page]))
+    mock_doc.close = MagicMock()
+
+    with patch("fitz.open", return_value=mock_doc):
+        from api.services.cv_parser.extractor import extract_text_from_pdf
+        result = extract_text_from_pdf(b"%PDF-fake")
+
+    assert "Page 1 text" in result
+
+
+def test_extract_text_empty_bytes():
+    """US-005: empty bytes returns '' without raising."""
+    with patch("fitz.open", side_effect=Exception("bad pdf")):
+        from api.services.cv_parser.extractor import extract_text_from_pdf
+        result = extract_text_from_pdf(b"")
+    assert result == ""
+
+
+def test_extract_text_corrupted_pdf():
+    """US-005: corrupted PDF raises fitz.FileDataError, returns '' without raising."""
+    import fitz
+    with patch("fitz.open", side_effect=fitz.FileDataError("corrupt")):
+        from api.services.cv_parser.extractor import extract_text_from_pdf
+        result = extract_text_from_pdf(b"corrupt-bytes")
+    assert result == ""
+
+
+def test_extract_text_zero_pages():
+    """US-005: PDF with zero pages returns ''."""
+    mock_doc = MagicMock()
+    mock_doc.__iter__ = MagicMock(return_value=iter([]))
+    mock_doc.close = MagicMock()
+    with patch("fitz.open", return_value=mock_doc):
+        from api.services.cv_parser.extractor import extract_text_from_pdf
+        result = extract_text_from_pdf(b"%PDF-empty")
+    assert result == ""
+
+
+def test_parse_seafarer_cv_happy_path():
+    """US-005: mock OpenAI returns JSON with all expected fields."""
+    fake_response = {
+        "name": "Test Sailor",
+        "rank": "Captain",
+        "sea_time_years": 5,
+        "certificates": ["STCW"],
+        "vessel_types": ["Tanker"],
+        "last_vessel": "MV Test",
+        "nationality": "Filipino",
+        "phone": "+63-9001234567",
+        "email": "test@example.com",
+    }
+    mock_choice = MagicMock()
+    mock_choice.message.content = json.dumps(fake_response)
+    mock_completion = MagicMock()
+    mock_completion.choices = [mock_choice]
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = mock_completion
+
+    with patch("openai.OpenAI", return_value=mock_client):
+        from api.services.cv_parser.extractor import parse_seafarer_cv
+        result = parse_seafarer_cv("some cv text", "fake-key")
+
+    assert result["rank"] == "Captain"
+    assert result["name"] == "Test Sailor"
+    assert "certificates" in result
+
+
+def test_parse_seafarer_cv_openai_error():
+    """US-005: OpenAI raises Exception, returns {} without raising."""
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = Exception("API down")
+
+    with patch("openai.OpenAI", return_value=mock_client):
+        from api.services.cv_parser.extractor import parse_seafarer_cv
+        result = parse_seafarer_cv("some text", "fake-key")
+
+    assert result == {}
+
+
+def test_parse_seafarer_cv_empty_text():
+    """US-005: empty string input returns {} or dict without raising."""
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = Exception("empty input")
+
+    with patch("openai.OpenAI", return_value=mock_client):
+        from api.services.cv_parser.extractor import parse_seafarer_cv
+        result = parse_seafarer_cv("", "fake-key")
+
+    assert isinstance(result, dict)
+
+
+def test_process_cv_happy_path():
+    """US-005: mock extract + parse, assert result has raw_text_preview."""
+    with patch("api.services.cv_parser.extractor.extract_text_from_pdf", return_value="cv text here"), \
+         patch("api.services.cv_parser.extractor.parse_seafarer_cv", return_value={"rank": "AB", "name": "Test"}):
+        from api.services.cv_parser.extractor import process_cv
+        result = process_cv(b"%PDF-fake", "fake-key")
+
+    assert "raw_text_preview" in result
+    assert result["rank"] == "AB"
+
+
+def test_process_cv_empty_bytes():
+    """US-005: empty bytes returns dict with 'error' key, no raise."""
+    with patch("fitz.open", side_effect=Exception("bad pdf")):
+        from api.services.cv_parser.extractor import process_cv
+        result = process_cv(b"", "fake-key")
+
+    assert isinstance(result, dict)
+    assert "error" in result
+
+
+def test_process_cv_partial_failure():
+    """US-005: parse_seafarer_cv returns {}, process_cv still returns dict with raw_text_preview."""
+    with patch("api.services.cv_parser.extractor.extract_text_from_pdf", return_value="some cv text"), \
+         patch("api.services.cv_parser.extractor.parse_seafarer_cv", return_value={}):
+        from api.services.cv_parser.extractor import process_cv
+        result = process_cv(b"%PDF-fake", "fake-key")
+
+    assert isinstance(result, dict)
+    assert "raw_text_preview" in result
