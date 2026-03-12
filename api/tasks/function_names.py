@@ -5,3 +5,5 @@ class FunctionNames:
     SYNC_CAMPAIGN_SOURCE = "sync_campaign_source"
     PROCESS_CAMPAIGN_BATCH = "process_campaign_batch"
     PROCESS_KNOWLEDGE_BASE_DOCUMENT = "process_knowledge_base_document"
+    PROCESS_CV_TASK = "process_cv_task"
+    SCORE_CALL_TASK = "score_call_task"

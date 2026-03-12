@@ -43,12 +43,14 @@ from api.tasks.campaign_tasks import (
     process_campaign_batch,
     sync_campaign_source,
 )
+from api.tasks.cv_processing import process_cv_task
 from api.tasks.knowledge_base_processing import process_knowledge_base_document
 from api.tasks.run_integrations import run_integrations_post_workflow_run
 from api.tasks.s3_upload import (
     process_workflow_completion,
     upload_voicemail_audio_to_s3,
 )
+from api.tasks.scoring_task import score_call_task
 
 
 class WorkerSettings:
@@ -59,6 +61,8 @@ class WorkerSettings:
         sync_campaign_source,
         process_campaign_batch,
         process_knowledge_base_document,
+        process_cv_task,
+        score_call_task,
     ]
     cron_jobs = []
     redis_settings = REDIS_SETTINGS
