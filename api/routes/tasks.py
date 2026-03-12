@@ -16,9 +16,17 @@ from api.services.auth.depends import get_user
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
+SHEET_TEMPLATES = {
+    "bulk_screening": "Full screening output — all candidates with scores",
+    "rank_verification": "Rank + certificate verification focus",
+    "cert_check": "Certificate validity audit",
+}
+
+
 class TaskCreate(BaseModel):
     name: str
     template: str = "maritime_screener"
+    sheet_template: str = "bulk_screening"  # bulk_screening | rank_verification | cert_check
     workflow_id: Optional[int] = None
     custom_instructions: Optional[str] = None
 

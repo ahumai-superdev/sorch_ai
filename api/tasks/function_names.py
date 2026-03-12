@@ -7,3 +7,4 @@ class FunctionNames:
     PROCESS_KNOWLEDGE_BASE_DOCUMENT = "process_knowledge_base_document"
     PROCESS_CV_TASK = "process_cv_task"
     SCORE_CALL_TASK = "score_call_task"
+    RUN_ACTIVE_TASKS = "run_active_tasks"

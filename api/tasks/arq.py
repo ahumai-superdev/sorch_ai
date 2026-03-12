@@ -51,6 +51,8 @@ from api.tasks.s3_upload import (
     upload_voicemail_audio_to_s3,
 )
 from api.tasks.scoring_task import score_call_task
+from api.tasks.task_runner import run_active_tasks
+from arq.cron import cron
 
 
 class WorkerSettings:
@@ -63,8 +65,11 @@ class WorkerSettings:
         process_knowledge_base_document,
         process_cv_task,
         score_call_task,
+        run_active_tasks,
     ]
-    cron_jobs = []
+    cron_jobs = [
+        cron(run_active_tasks, second={0}, timeout=55),  # every 60s
+    ]
     redis_settings = REDIS_SETTINGS
     max_jobs = 10
 
