@@ -14,7 +14,6 @@ import {
   Megaphone,
   Phone,
   Settings,
-  Star,
   TrendingUp,
   Workflow,
   Wrench,
@@ -101,20 +100,15 @@ export function AppSidebar() {
 
   const buildSection = [
         {
-          title: "Voice Agents",
+          title: "Agents",
           url: "/workflow",
           icon: Workflow,
         },
         {
-          title: "Campaigns",
-          url: "/campaigns",
+          title: "Tasks",
+          url: "/tasks",
           icon: Megaphone,
         },
-        // {
-        //   title: "Automation",
-        //   url: "/automation",
-        //   icon: Zap,
-        // },
         {
           title: "Models",
           url: "/model-configurations",
@@ -227,7 +221,7 @@ export function AppSidebar() {
               href="/"
               className="flex items-center gap-2 px-2 text-xl font-bold"
             >
-              Dograh
+              Sorch AI
               {versionInfo && (
                 <span className="text-xs font-normal text-muted-foreground">
                   v{versionInfo.ui}
@@ -265,51 +259,6 @@ export function AppSidebar() {
             </React.Suspense>
           </div>
         )}
-
-        {/* Star us on GitHub for OSS mode - at the top */}
-        {provider !== "stack" && (
-          <div className="mt-3 px-2">
-            {state === "collapsed" ? (
-              <TooltipProvider delayDuration={0}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="w-full hover:bg-accent hover:text-accent-foreground"
-                      asChild
-                    >
-                      <a
-                        href="https://github.com/dograh-hq/dograh"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                        <span className="sr-only">Star us on GitHub</span>
-                      </a>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">
-                    <p>Star us on GitHub</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : (
-              <Button
-                variant="ghost"
-                className="w-full justify-start hover:bg-accent hover:text-accent-foreground"
-                asChild
-              >
-                <a
-                  href="https://github.com/dograh-hq/dograh"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                  <span className="ml-2">Star us on GitHub</span>
-                </a>
-              </Button>
-            )}
           </div>
         )}
       </SidebarHeader>

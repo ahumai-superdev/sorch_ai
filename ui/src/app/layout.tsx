@@ -4,9 +4,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Suspense } from "react";
 
-import ChatwootWidget from "@/components/ChatwootWidget";
 import AppLayout from "@/components/layout/AppLayout";
-import PostHogIdentify from "@/components/PostHogIdentify";
 import SpinLoader from "@/components/SpinLoader";
 import { Toaster } from "@/components/ui/sonner";
 import { AppConfigProvider } from "@/context/AppConfigContext";
@@ -26,8 +24,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Dograh",
-  description: "Open Source Voice Assistant Workflow Builder",
+  title: "Sorch AI",
+  description: "Autonomous AI voice screening for maritime recruitment",
 };
 
 export default function RootLayout({
@@ -39,7 +37,6 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Inline script to prevent flash of light theme - runs before React hydrates */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -64,12 +61,10 @@ export default function RootLayout({
             <Suspense fallback={<SpinLoader />}>
               <UserConfigProvider>
                 <OnboardingProvider>
-                  <PostHogIdentify />
                   <AppLayout>
                     {children}
                   </AppLayout>
                   <Toaster />
-                  <ChatwootWidget />
                 </OnboardingProvider>
               </UserConfigProvider>
             </Suspense>
