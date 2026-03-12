@@ -20,7 +20,7 @@ export default function OnboardingPage() {
   const saveAIServices = async () => {
     setSaving(true);
     try {
-      await fetch("/api/v1/service-keys", {
+      await fetch("/api/v1/user/service-keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ openai_api_key: openaiKey, sarvam_api_key: sarvamKey }),
