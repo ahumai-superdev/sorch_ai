@@ -3,16 +3,15 @@ Tasks API — maritime batch screening workflow.
 Thin wrapper around campaign infrastructure with maritime-specific UX.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional, List
-from loguru import logger
+from typing import List, Optional
 
-from api.db.database import get_async_session
-from api.db.campaign_client import CampaignClient
-from api.services.auth.depends import get_current_user
+from fastapi import APIRouter, Depends, HTTPException
+from loguru import logger
+from pydantic import BaseModel
+
+from api.db import db_client
 from api.db.models import UserModel
+from api.services.auth.depends import get_user
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -20,20 +19,8 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 class TaskCreate(BaseModel):
     name: str
     template: str = "maritime_screener"
-    workflow_id: Optional[str] = None
+    workflow_id: Optional[int] = None
     custom_instructions: Optional[str] = None
-
-
-class TaskResponse(BaseModel):
-    id: int
-    name: str
-    template: str
-    status: str
-    total_candidates: int = 0
-    processed_candidates: int = 0
-    avg_score: Optional[float] = None
-    is_active: bool = False
-    created_at: str
 
 
 class CandidateResponse(BaseModel):
@@ -51,25 +38,21 @@ class CandidateResponse(BaseModel):
 
 @router.get("", response_model=List[dict])
 async def list_tasks(
-    db: AsyncSession = Depends(get_async_session),
-    current_user: UserModel = Depends(get_current_user),
-):
+    user: UserModel = Depends(get_user),
+) -> List[dict]:
     """List all tasks for the current organization."""
     try:
-        client = CampaignClient(db)
-        campaigns = await client.get_campaigns(
-            organization_id=current_user.selected_organization_id
-        )
+        campaigns = await db_client.get_campaigns(user.selected_organization_id)
         return [
             {
                 "id": c.id,
                 "name": c.name,
-                "template": getattr(c, "template", "maritime_screener"),
-                "status": getattr(c, "status", "draft"),
-                "total_candidates": getattr(c, "total_candidates", 0),
-                "processed_candidates": getattr(c, "processed_candidates", 0),
-                "avg_score": getattr(c, "avg_score", None),
-                "is_active": getattr(c, "is_active", False),
+                "template": "maritime_screener",
+                "status": getattr(c, "state", "draft"),
+                "total_candidates": getattr(c, "total_rows", 0) or 0,
+                "processed_candidates": getattr(c, "processed_rows", 0) or 0,
+                "avg_score": None,
+                "is_active": getattr(c, "state", "") == "running",
                 "created_at": c.created_at.isoformat() if c.created_at else "",
             }
             for c in (campaigns or [])
@@ -82,16 +65,17 @@ async def list_tasks(
 @router.post("", response_model=dict)
 async def create_task(
     task: TaskCreate,
-    db: AsyncSession = Depends(get_async_session),
-    current_user: UserModel = Depends(get_current_user),
-):
+    user: UserModel = Depends(get_user),
+) -> dict:
     """Create a new screening task."""
     try:
-        client = CampaignClient(db)
-        campaign = await client.create_campaign(
+        campaign = await db_client.create_campaign(
             name=task.name,
-            organization_id=current_user.selected_organization_id,
-            workflow_id=task.workflow_id,
+            workflow_id=task.workflow_id or 0,
+            source_type="csv",
+            source_id="",
+            user_id=user.id,
+            organization_id=user.selected_organization_id,
         )
         return {"id": campaign.id, "name": campaign.name, "status": "created"}
     except Exception as e:
@@ -102,57 +86,41 @@ async def create_task(
 @router.get("/{task_id}", response_model=dict)
 async def get_task(
     task_id: int,
-    db: AsyncSession = Depends(get_async_session),
-    current_user: UserModel = Depends(get_current_user),
-):
+    user: UserModel = Depends(get_user),
+) -> dict:
     """Get task details with candidate list."""
-    try:
-        client = CampaignClient(db)
-        campaign = await client.get_campaign(task_id)
-        if not campaign:
-            raise HTTPException(status_code=404, detail="Task not found")
-        return {
-            "id": campaign.id,
-            "name": campaign.name,
-            "template": getattr(campaign, "template", "maritime_screener"),
-            "status": getattr(campaign, "status", "draft"),
-            "is_active": getattr(campaign, "is_active", False),
-            "created_at": campaign.created_at.isoformat() if campaign.created_at else "",
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get task {task_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    campaign = await db_client.get_campaign(task_id, user.selected_organization_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {
+        "id": campaign.id,
+        "name": campaign.name,
+        "template": "maritime_screener",
+        "status": getattr(campaign, "state", "draft"),
+        "is_active": getattr(campaign, "state", "") == "running",
+        "created_at": campaign.created_at.isoformat() if campaign.created_at else "",
+    }
 
 
 @router.patch("/{task_id}/toggle", response_model=dict)
 async def toggle_task(
     task_id: int,
-    db: AsyncSession = Depends(get_async_session),
-    current_user: UserModel = Depends(get_current_user),
-):
+    user: UserModel = Depends(get_user),
+) -> dict:
     """Toggle task active/paused status."""
-    try:
-        client = CampaignClient(db)
-        campaign = await client.get_campaign(task_id)
-        if not campaign:
-            raise HTTPException(status_code=404, detail="Task not found")
-        is_active = not getattr(campaign, "is_active", False)
-        logger.info(f"Task {task_id} toggled to active={is_active}")
-        return {"id": task_id, "is_active": is_active}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    campaign = await db_client.get_campaign(task_id, user.selected_organization_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Task not found")
+    is_active = getattr(campaign, "state", "") != "running"
+    logger.info(f"Task {task_id} toggled to active={is_active}")
+    return {"id": task_id, "is_active": is_active}
 
 
 @router.post("/{task_id}/start", response_model=dict)
 async def start_task(
     task_id: int,
-    db: AsyncSession = Depends(get_async_session),
-    current_user: UserModel = Depends(get_current_user),
-):
+    user: UserModel = Depends(get_user),
+) -> dict:
     """Start processing a task — begins dialing candidates."""
     logger.info(f"Starting task {task_id}")
     return {"id": task_id, "status": "running"}
@@ -161,9 +129,8 @@ async def start_task(
 @router.post("/{task_id}/stop", response_model=dict)
 async def stop_task(
     task_id: int,
-    db: AsyncSession = Depends(get_async_session),
-    current_user: UserModel = Depends(get_current_user),
-):
+    user: UserModel = Depends(get_user),
+) -> dict:
     """Stop processing a task."""
     logger.info(f"Stopping task {task_id}")
     return {"id": task_id, "status": "paused"}
@@ -176,9 +143,8 @@ async def get_task_candidates(
     limit: int = 50,
     min_score: Optional[int] = None,
     call_status: Optional[str] = None,
-    db: AsyncSession = Depends(get_async_session),
-    current_user: UserModel = Depends(get_current_user),
-):
+    user: UserModel = Depends(get_user),
+) -> List[dict]:
     """Get paginated candidate list with scores for a task."""
     # TODO: Query actual candidate records from DB
     # For now returns empty list — will be populated as calls complete

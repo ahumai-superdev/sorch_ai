@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 from api.routes.auth import router as auth_router
 from api.routes.campaign import router as campaign_router
+from api.routes.tasks import router as tasks_router
 from api.routes.credentials import router as credentials_router
 from api.routes.integration import router as integration_router
 from api.routes.knowledge_base import router as knowledge_base_router
@@ -30,6 +31,7 @@ router.include_router(telephony_router)
 router.include_router(workflow_router)
 router.include_router(user_router)
 router.include_router(campaign_router)
+router.include_router(tasks_router)
 router.include_router(credentials_router)
 router.include_router(tool_router)
 router.include_router(integration_router)
