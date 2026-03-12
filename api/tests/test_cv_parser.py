@@ -93,6 +93,45 @@ class TestExtractTextFromPdf:
             result = extract_text_from_pdf(b"not-a-pdf")
         assert result == ""
 
+    def test_fitz_file_data_error_returns_empty_string(self):
+        """US-002: fitz.FileDataError must be caught and return ''."""
+        import fitz
+        with patch("fitz.open", side_effect=fitz.FileDataError("corrupt")):
+            from api.services.cv_parser.extractor import extract_text_from_pdf
+            result = extract_text_from_pdf(b"corrupt-bytes")
+        assert result == ""
+
+    def test_value_error_returns_empty_string(self):
+        """US-002: ValueError must be caught and return ''."""
+        with patch("fitz.open", side_effect=ValueError("bad value")):
+            from api.services.cv_parser.extractor import extract_text_from_pdf
+            result = extract_text_from_pdf(b"some-bytes")
+        assert result == ""
+
+    def test_zero_page_pdf_returns_empty_string(self):
+        """US-002: A PDF with zero pages should return ''."""
+        mock_doc = MagicMock()
+        mock_doc.__iter__ = MagicMock(return_value=iter([]))
+        mock_doc.close = MagicMock()
+        with patch("fitz.open", return_value=mock_doc):
+            from api.services.cv_parser.extractor import extract_text_from_pdf
+            result = extract_text_from_pdf(b"%PDF-empty")
+        assert result == ""
+
+    def test_multipage_text_concatenated(self):
+        """US-002: Text from multiple pages is joined with newline."""
+        pages = [MagicMock(), MagicMock()]
+        pages[0].get_text.return_value = "Page 1 content"
+        pages[1].get_text.return_value = "Page 2 content"
+        mock_doc = MagicMock()
+        mock_doc.__iter__ = MagicMock(return_value=iter(pages))
+        mock_doc.close = MagicMock()
+        with patch("fitz.open", return_value=mock_doc):
+            from api.services.cv_parser.extractor import extract_text_from_pdf
+            result = extract_text_from_pdf(b"%PDF-multipage")
+        assert "Page 1 content" in result
+        assert "Page 2 content" in result
+
 
 # ---------------------------------------------------------------------------
 # parse_seafarer_cv tests
