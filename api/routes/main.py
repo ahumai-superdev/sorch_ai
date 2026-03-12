@@ -3,6 +3,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 from api.routes.auth import router as auth_router
+from api.routes.onboarding import router as onboarding_router
 from api.routes.campaign import router as campaign_router
 from api.routes.tasks import router as tasks_router
 from api.routes.credentials import router as credentials_router
@@ -27,6 +28,7 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
+router.include_router(onboarding_router)
 router.include_router(telephony_router)
 router.include_router(workflow_router)
 router.include_router(user_router)
