@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Anchor,Play, Square } from "lucide-react";
 import { useParams } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { useCallback,useEffect, useState } from "react";
+
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Play, Square, Anchor } from "lucide-react";
 
 interface Candidate {
   id: number;

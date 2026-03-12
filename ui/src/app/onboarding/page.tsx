@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { Anchor, CheckCircle, ChevronLeft,ChevronRight, Key, Mic, Phone } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
+
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Anchor, Key, Phone, Mic, CheckCircle, ChevronRight, ChevronLeft } from "lucide-react";
 
 export default function OnboardingPage() {
   const router = useRouter();

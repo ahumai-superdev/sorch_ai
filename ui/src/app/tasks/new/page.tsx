@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { Anchor, Check,ChevronLeft, ChevronRight, FileText, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
+
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Anchor, Upload, FileText, ChevronRight, ChevronLeft, Check } from "lucide-react";
 
 const STEPS = ["Template", "Contacts", "Configure"];
 

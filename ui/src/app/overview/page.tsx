@@ -2,8 +2,8 @@
 
 import { Star } from 'lucide-react';
 import Link from 'next/link';
-import SetupBanner from '@/components/onboarding/SetupBanner';
 
+import SetupBanner from '@/components/onboarding/SetupBanner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth';

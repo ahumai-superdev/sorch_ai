@@ -259,8 +259,6 @@ export function AppSidebar() {
             </React.Suspense>
           </div>
         )}
-          </div>
-        )}
       </SidebarHeader>
 
       <SidebarContent className={cn(
