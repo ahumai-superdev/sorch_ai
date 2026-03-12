@@ -4,14 +4,12 @@ Uses PyMuPDF for text extraction and GPT-4o-mini for structured parsing.
 """
 
 import json
-from typing import Optional
-
 import importlib.util
 import pathlib
 
 import fitz  # PyMuPDF
 from loguru import logger
-from openai import AsyncOpenAI
+import openai
 
 # api/constants.py (a module) shadows api/constants/ (a directory), so we load
 # maritime.py directly from its file path to avoid the ModuleNotFoundError.
@@ -22,7 +20,8 @@ _spec.loader.exec_module(_maritime_mod)  # type: ignore[union-attr]
 SEAFARER_RANKS = _maritime_mod.SEAFARER_RANKS
 VESSEL_TYPES = _maritime_mod.VESSEL_TYPES
 REQUIRED_CERTIFICATES = _maritime_mod.REQUIRED_CERTIFICATES
-from api.services.cv_parser.schemas import SeafarerProfile
+
+from api.services.cv_parser.schemas import SeafarerProfile  # noqa: E402
 
 _CV_PARSE_PROMPT = """You are a maritime HR specialist. Extract structured information from this seafarer CV/resume.
 
@@ -57,22 +56,24 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
         return ""
 
 
-async def parse_seafarer_cv(raw_text: str, openai_api_key: str) -> dict:
-    """Parse raw CV text into structured seafarer data using GPT-4o-mini."""
-    if not raw_text.strip():
-        return {}
+def parse_seafarer_cv(raw_text: str, openai_api_key: str) -> dict:
+    """Parse raw CV text into structured seafarer data using GPT-4o-mini.
 
-    client = AsyncOpenAI(api_key=openai_api_key)
-
-    prompt = _CV_PARSE_PROMPT.format(
-        ranks=", ".join(SEAFARER_RANKS),
-        certs=", ".join(REQUIRED_CERTIFICATES.keys()),
-        vessels=", ".join(VESSEL_TYPES),
-        cv_text=raw_text[:4000],  # Limit to 4k chars to stay within token budget
-    )
-
+    Returns a dict with keys: name, rank, sea_time_years, certificates,
+    vessel_types, last_vessel, nationality, phone, email.
+    Returns {} on any error — never raises.
+    """
     try:
-        response = await client.chat.completions.create(
+        client = openai.OpenAI(api_key=openai_api_key)
+
+        prompt = _CV_PARSE_PROMPT.format(
+            ranks=", ".join(SEAFARER_RANKS),
+            certs=", ".join(REQUIRED_CERTIFICATES.keys()),
+            vessels=", ".join(VESSEL_TYPES),
+            cv_text=raw_text[:4000],  # stay within token budget
+        )
+
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
@@ -86,45 +87,20 @@ async def parse_seafarer_cv(raw_text: str, openai_api_key: str) -> dict:
         return {}
 
 
-async def process_cv(
-    file_bytes: bytes,
-    openai_api_key: str,
-    filename: Optional[str] = None,
-) -> SeafarerProfile:
+def process_cv(file_bytes: bytes, openai_api_key: str) -> dict:
+    """Full CV processing pipeline: extract text → parse with LLM → return dict.
+
+    Always returns a dict. On empty PDF returns {"error": "..."}. On any
+    other exception returns {"error": str(e)}. Never raises.
     """
-    Full CV processing pipeline:
-    1. Extract text from PDF
-    2. Parse with GPT-4o-mini
-    3. Return SeafarerProfile
+    try:
+        raw_text = extract_text_from_pdf(file_bytes)
+        if not raw_text:
+            return {"error": "could not extract text from PDF"}
 
-    Handles errors gracefully — returns partial data on failure.
-    """
-    log_prefix = f"[CV:{filename or 'unknown'}]"
-
-    # Step 1: Extract text
-    raw_text = extract_text_from_pdf(file_bytes)
-    if not raw_text:
-        logger.warning(f"{log_prefix} No text extracted from PDF")
-        return SeafarerProfile()
-
-    logger.info(f"{log_prefix} Extracted {len(raw_text)} chars from PDF")
-
-    # Step 2: Parse with LLM
-    parsed = await parse_seafarer_cv(raw_text, openai_api_key)
-
-    # Step 3: Build profile
-    profile = SeafarerProfile(
-        name=parsed.get("name"),
-        rank=parsed.get("rank"),
-        sea_time_years=parsed.get("sea_time_years"),
-        certificates=parsed.get("certificates") or [],
-        vessel_types=parsed.get("vessel_types") or [],
-        last_vessel=parsed.get("last_vessel"),
-        nationality=parsed.get("nationality"),
-        phone=parsed.get("phone"),
-        email=parsed.get("email"),
-        raw_text_preview=raw_text[:500],
-    )
-
-    logger.info(f"{log_prefix} Parsed: rank={profile.rank}, certs={profile.certificates}")
-    return profile
+        parsed = parse_seafarer_cv(raw_text, openai_api_key)
+        parsed["raw_text_preview"] = raw_text[:500]
+        return parsed
+    except Exception as e:
+        logger.error(f"process_cv failed: {e}")
+        return {"error": str(e)}

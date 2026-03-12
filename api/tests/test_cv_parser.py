@@ -1,7 +1,7 @@
-"""Unit tests for the CV parser package (US-001)."""
+"""Unit tests for the CV parser package (US-001, US-002, US-003)."""
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -9,7 +9,7 @@ from api.services.cv_parser.schemas import SeafarerProfile
 
 
 # ---------------------------------------------------------------------------
-# SeafarerProfile schema tests
+# SeafarerProfile schema tests (US-001)
 # ---------------------------------------------------------------------------
 
 class TestSeafarerProfile:
@@ -65,7 +65,7 @@ class TestSeafarerProfile:
 
 
 # ---------------------------------------------------------------------------
-# extract_text_from_pdf tests
+# extract_text_from_pdf tests (US-001 / US-002)
 # ---------------------------------------------------------------------------
 
 class TestExtractTextFromPdf:
@@ -134,12 +134,21 @@ class TestExtractTextFromPdf:
 
 
 # ---------------------------------------------------------------------------
-# parse_seafarer_cv tests
+# parse_seafarer_cv tests (US-003)
 # ---------------------------------------------------------------------------
 
 class TestParseSeafarerCv:
-    @pytest.mark.asyncio
-    async def test_returns_parsed_dict(self):
+    def _make_mock_client(self, response_dict: dict) -> MagicMock:
+        mock_choice = MagicMock()
+        mock_choice.message.content = json.dumps(response_dict)
+        mock_completion = MagicMock()
+        mock_completion.choices = [mock_choice]
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_completion
+        return mock_client
+
+    def test_returns_parsed_dict_with_expected_keys(self):
+        """US-003 AC3: mocked OpenAI returns dict with expected keys."""
         fake_response = {
             "name": "Maria Santos",
             "rank": "Chief Officer",
@@ -151,34 +160,158 @@ class TestParseSeafarerCv:
             "phone": "+63-9001234567",
             "email": "maria@example.com",
         }
-        mock_choice = MagicMock()
-        mock_choice.message.content = json.dumps(fake_response)
-        mock_completion = MagicMock()
-        mock_completion.choices = [mock_choice]
+        mock_client = self._make_mock_client(fake_response)
 
-        mock_client = AsyncMock()
-        mock_client.chat.completions.create = AsyncMock(return_value=mock_completion)
-
-        with patch("api.services.cv_parser.extractor.AsyncOpenAI", return_value=mock_client):
+        with patch("openai.OpenAI", return_value=mock_client):
             from api.services.cv_parser.extractor import parse_seafarer_cv
-            result = await parse_seafarer_cv("some cv text", "fake-key")
+            result = parse_seafarer_cv("some cv text", "fake-key")
 
         assert result["name"] == "Maria Santos"
         assert result["rank"] == "Chief Officer"
+        assert result["sea_time_years"] == 8
+        assert "COC" in result["certificates"]
 
-    @pytest.mark.asyncio
-    async def test_empty_text_returns_empty_dict(self):
-        from api.services.cv_parser.extractor import parse_seafarer_cv
-        result = await parse_seafarer_cv("   ", "fake-key")
-        assert result == {}
+    def test_openai_exception_returns_empty_dict(self):
+        """US-003 AC4: OpenAI exception returns {} without raising."""
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = Exception("API error")
 
-    @pytest.mark.asyncio
-    async def test_openai_failure_returns_empty_dict(self):
-        mock_client = AsyncMock()
-        mock_client.chat.completions.create = AsyncMock(side_effect=Exception("API error"))
-
-        with patch("api.services.cv_parser.extractor.AsyncOpenAI", return_value=mock_client):
+        with patch("openai.OpenAI", return_value=mock_client):
             from api.services.cv_parser.extractor import parse_seafarer_cv
-            result = await parse_seafarer_cv("some text", "fake-key")
+            result = parse_seafarer_cv("some text", "fake-key")
 
         assert result == {}
+
+    def test_json_decode_error_returns_empty_dict(self):
+        """US-003: Malformed JSON from OpenAI returns {} without raising."""
+        mock_choice = MagicMock()
+        mock_choice.message.content = "not valid json {{{"
+        mock_completion = MagicMock()
+        mock_completion.choices = [mock_choice]
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_completion
+
+        with patch("openai.OpenAI", return_value=mock_client):
+            from api.services.cv_parser.extractor import parse_seafarer_cv
+            result = parse_seafarer_cv("some text", "fake-key")
+
+        assert result == {}
+
+    def test_uses_gpt4o_mini_model(self):
+        """US-003: Correct model is used in the API call."""
+        fake_response = {"name": "Test"}
+        mock_client = self._make_mock_client(fake_response)
+
+        with patch("openai.OpenAI", return_value=mock_client):
+            from api.services.cv_parser.extractor import parse_seafarer_cv
+            parse_seafarer_cv("cv text", "fake-key")
+
+        call_kwargs = mock_client.chat.completions.create.call_args
+        assert call_kwargs.kwargs["model"] == "gpt-4o-mini"
+
+    def test_uses_json_object_response_format(self):
+        """US-003: response_format=json_object is set."""
+        fake_response = {"name": "Test"}
+        mock_client = self._make_mock_client(fake_response)
+
+        with patch("openai.OpenAI", return_value=mock_client):
+            from api.services.cv_parser.extractor import parse_seafarer_cv
+            parse_seafarer_cv("cv text", "fake-key")
+
+        call_kwargs = mock_client.chat.completions.create.call_args
+        assert call_kwargs.kwargs["response_format"] == {"type": "json_object"}
+
+
+# ---------------------------------------------------------------------------
+# process_cv tests (US-003)
+# ---------------------------------------------------------------------------
+
+class TestProcessCv:
+    def test_empty_bytes_returns_error_dict(self):
+        """US-003 AC5: empty bytes returns dict with 'error' key, no raise."""
+        with patch("fitz.open", side_effect=Exception("bad pdf")):
+            from api.services.cv_parser.extractor import process_cv
+            result = process_cv(b"", "fake-key")
+
+        assert "error" in result
+        assert isinstance(result, dict)
+
+    def test_result_includes_raw_text_preview(self):
+        """US-003 AC6: result dict includes raw_text_preview (first 500 chars)."""
+        long_text = "A" * 600
+        mock_page = MagicMock()
+        mock_page.get_text.return_value = long_text
+        mock_doc = MagicMock()
+        mock_doc.__iter__ = MagicMock(return_value=iter([mock_page]))
+        mock_doc.close = MagicMock()
+
+        fake_parsed = {"name": "Test Sailor", "rank": "Captain"}
+        mock_choice = MagicMock()
+        mock_choice.message.content = json.dumps(fake_parsed)
+        mock_completion = MagicMock()
+        mock_completion.choices = [mock_choice]
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_completion
+
+        with patch("fitz.open", return_value=mock_doc), \
+             patch("openai.OpenAI", return_value=mock_client):
+            from api.services.cv_parser.extractor import process_cv
+            result = process_cv(b"%PDF-fake", "fake-key")
+
+        assert "raw_text_preview" in result
+        assert len(result["raw_text_preview"]) <= 500
+
+    def test_process_cv_merges_parsed_data(self):
+        """US-003: process_cv merges parsed fields into result dict."""
+        mock_page = MagicMock()
+        mock_page.get_text.return_value = "Juan dela Cruz Chief Engineer"
+        mock_doc = MagicMock()
+        mock_doc.__iter__ = MagicMock(return_value=iter([mock_page]))
+        mock_doc.close = MagicMock()
+
+        fake_parsed = {
+            "name": "Juan dela Cruz",
+            "rank": "Chief Engineer",
+            "sea_time_years": 12,
+            "certificates": ["COC"],
+            "vessel_types": ["Bulk Carrier"],
+            "last_vessel": "MV Pacific",
+            "nationality": "Filipino",
+            "phone": "+63-9171234567",
+            "email": "juan@example.com",
+        }
+        mock_choice = MagicMock()
+        mock_choice.message.content = json.dumps(fake_parsed)
+        mock_completion = MagicMock()
+        mock_completion.choices = [mock_choice]
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_completion
+
+        with patch("fitz.open", return_value=mock_doc), \
+             patch("openai.OpenAI", return_value=mock_client):
+            from api.services.cv_parser.extractor import process_cv
+            result = process_cv(b"%PDF-fake", "fake-key")
+
+        assert result["name"] == "Juan dela Cruz"
+        assert result["rank"] == "Chief Engineer"
+        assert "raw_text_preview" in result
+
+    def test_process_cv_parse_failure_still_has_preview(self):
+        """US-003: even if parse fails, raw_text_preview is in result."""
+        mock_page = MagicMock()
+        mock_page.get_text.return_value = "some cv text"
+        mock_doc = MagicMock()
+        mock_doc.__iter__ = MagicMock(return_value=iter([mock_page]))
+        mock_doc.close = MagicMock()
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = Exception("LLM down")
+
+        with patch("fitz.open", return_value=mock_doc), \
+             patch("openai.OpenAI", return_value=mock_client):
+            from api.services.cv_parser.extractor import process_cv
+            result = process_cv(b"%PDF-fake", "fake-key")
+
+        # parse_seafarer_cv returns {} on error, so raw_text_preview is added to {}
+        assert "raw_text_preview" in result
+        assert isinstance(result, dict)
