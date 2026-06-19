@@ -75,7 +75,7 @@ services:
       - app-network
 
   api:
-    image: ${REGISTRY:-dograhai}/dograh-api:latest
+    image: ${REGISTRY:-sorchai}/sorch-api:latest
     volumes:
       - shared-tmp:/tmp
     environment:
@@ -128,8 +128,6 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-      cloudflared:
-        condition: service_started
     healthcheck:
       test:
         [
@@ -144,17 +142,14 @@ services:
       - app-network
 
   ui:
-    image: ${REGISTRY:-dograhai}/dograh-ui:latest
+    image: ${REGISTRY:-sorchai}/sorch-ui:latest
     environment:
       # Server-side URL (SSR, internal Docker network)
       BACKEND_URL: "${BACKEND_URL:-http://api:8000}"
       NODE_ENV: "oss"
       # Flag to enable/ disable posthog
-      ENABLE_TELEMETRY: "${ENABLE_TELEMETRY:-true}"
 
       # Posthog
-      POSTHOG_KEY: "phc_ItizB1dP6yv7ZYobbcqrpxTdbomDA8hJFSEmAMdYvIr"
-      POSTHOG_HOST: "https://us.posthog.com"
     ports:
       - "3010:3010"
     depends_on:
@@ -170,15 +165,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    networks:
-      - app-network
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: cloudflared-tunnel
-    command: tunnel --no-autoupdate --url http://api:8000 --metrics 0.0.0.0:2000
-    ports:
-      - "2000:2000" # Expose metrics endpoint
     networks:
       - app-network
 

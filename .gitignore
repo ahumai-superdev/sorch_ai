@@ -15,3 +15,20 @@ venv/
 .venv/
 .playwright-mcp
 coturn/
+
+# Security
+*.key
+*.pem
+
+# Build artifacts
+dist/
+node_modules/
+
+# Logs
+*.log
+
+# Test coverage
+coverage/
+
+# Local env overrides
+.env.local

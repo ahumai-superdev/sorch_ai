@@ -175,4 +175,13 @@ async def process_workflow_completion(
     except Exception as e:
         logger.error(f"Error calculating cost for workflow {workflow_run_id}: {e}")
 
+    # Step 5: Enqueue post-call scoring (transcript → GPT-4o-mini → fit_score)
+    try:
+        from api.tasks.arq import enqueue_job
+        from api.tasks.function_names import FunctionNames
+        await enqueue_job(FunctionNames.SCORE_CALL_TASK, str(workflow_run_id), 0)
+        logger.info(f"Enqueued scoring task for workflow run {workflow_run_id}")
+    except Exception as e:
+        logger.error(f"Error enqueuing scoring task for workflow {workflow_run_id}: {e}")
+
     logger.info(f"Completed workflow completion processing for run {workflow_run_id}")

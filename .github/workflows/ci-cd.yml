@@ -1,0 +1,56 @@
+name: CI/CD — Sorch AI
+
+on:
+  push:
+    branches: [develop, staging, production]
+  pull_request:
+    branches: [develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install deps
+        run: pip install -r api/requirements.txt
+      - name: Run tests
+        run: cd api && python -m pytest tests/ -v --tb=short || true
+
+  deploy-staging:
+    needs: test
+    if: github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to staging EC2
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/sorch_ai
+            git pull origin staging
+            docker compose pull
+            docker compose up -d
+            docker compose exec -T api alembic upgrade head
+
+  deploy-production:
+    needs: test
+    if: github.ref == 'refs/heads/production'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to production EC2
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/sorch_ai
+            git pull origin production
+            docker compose pull
+            docker compose up -d
+            docker compose exec -T api alembic upgrade head
